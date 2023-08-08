@@ -13,10 +13,11 @@ use move_core_types::{
     language_storage::{StructTag, TypeTag},
     resolver::MoveResolver,
     u256::U256,
-    value::{MoveStructLayout, MoveTypeLayout},
+    value::{MoveStructLayout, MoveTypeLayout, MoveValue},
 };
 use move_resource_viewer::{AnnotatedMoveValue, MoveValueAnnotator};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use smt::UpdateSet;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// `State` is represent state in MoveOS statedb, it can be a Move module or a Move Object or a Move resource or a Table value
@@ -80,6 +81,11 @@ pub trait MoveState: MoveType + DeserializeOwned + Serialize {
     fn into_state(self) -> State {
         let value = self.to_bytes();
         State::new(value, Self::type_tag())
+    }
+    fn to_move_value(&self) -> MoveValue {
+        let blob = self.to_bytes();
+        MoveValue::simple_deserialize(&blob, &Self::type_layout())
+            .expect("Deserialize the MoveValue from MoveState should success")
     }
 }
 
@@ -217,6 +223,9 @@ where
 /// Move State is a trait that is used to represent the state of a Move Resource in Rust
 /// It is like the `MoveResource` in move_core_types
 pub trait MoveStructState: MoveStructType + DeserializeOwned + Serialize {
+    fn type_layout() -> MoveTypeLayout {
+        MoveTypeLayout::Struct(Self::struct_layout())
+    }
     fn struct_layout() -> MoveStructLayout;
     fn type_match(type_tag: &StructTag) -> bool {
         type_tag == &Self::struct_tag()
@@ -399,4 +408,20 @@ pub struct StateChangeSet {
 pub struct TableChange {
     //TODO should we keep the key's type here?
     pub entries: BTreeMap<Vec<u8>, Op<State>>,
+}
+
+/// StateSet is represent state dump result. Not include events and other stores
+#[derive(Clone, Debug, Default)]
+pub struct StateSet {
+    pub state_sets: BTreeMap<ObjectID, UpdateSet<Vec<u8>, State>>,
+}
+
+impl StateSet {
+    pub fn insert(
+        &mut self,
+        k: ObjectID,
+        v: UpdateSet<Vec<u8>, State>,
+    ) -> Option<UpdateSet<Vec<u8>, State>> {
+        self.state_sets.insert(k, v)
+    }
 }
